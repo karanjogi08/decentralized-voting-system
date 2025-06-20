@@ -1,1 +1,165 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
+contract Project {
+    // State variables
+    address public owner;
+    uint256 public votingEnd;
+    bool public votingActive;
+    
+    struct Candidate {
+        string name;
+        uint256 voteCount;
+        bool exists;
+    }
+    
+    struct Voter {
+        bool hasVoted;
+        uint256 votedCandidate;
+        bool isRegistered;
+    }
+    
+    mapping(uint256 => Candidate) public candidates;
+    mapping(address => Voter) public voters;
+    uint256 public candidateCount;
+    uint256 public totalVotes;
+    
+    // Events
+    event VoterRegistered(address voter);
+    event CandidateAdded(uint256 candidateId, string name);
+    event VoteCast(address voter, uint256 candidateId);
+    event VotingStarted(uint256 endTime);
+    event VotingEnded();
+    
+    // Modifiers
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can call this function");
+        _;
+    }
+    
+    modifier votingIsActive() {
+        require(votingActive && block.timestamp < votingEnd, "Voting is not active");
+        _;
+    }
+    
+    modifier votingNotActive() {
+        require(!votingActive, "Voting is currently active");
+        _;
+    }
+    
+    constructor() {
+        owner = msg.sender;
+        votingActive = false;
+        candidateCount = 0;
+        totalVotes = 0;
+    }
+    
+    // Core Function 1: Register voters and manage candidates
+    function registerVoter(address _voter) public onlyOwner votingNotActive {
+        require(!voters[_voter].isRegistered, "Voter already registered");
+        
+        voters[_voter].isRegistered = true;
+        voters[_voter].hasVoted = false;
+        
+        emit VoterRegistered(_voter);
+    }
+    
+    function addCandidate(string memory _name) public onlyOwner votingNotActive {
+        require(bytes(_name).length > 0, "Candidate name cannot be empty");
+        
+        candidates[candidateCount] = Candidate({
+            name: _name,
+            voteCount: 0,
+            exists: true
+        });
+        
+        emit CandidateAdded(candidateCount, _name);
+        candidateCount++;
+    }
+    
+    // Core Function 2: Cast vote
+    function vote(uint256 _candidateId) public votingIsActive {
+        require(voters[msg.sender].isRegistered, "You are not registered to vote");
+        require(!voters[msg.sender].hasVoted, "You have already voted");
+        require(_candidateId < candidateCount, "Invalid candidate ID");
+        require(candidates[_candidateId].exists, "Candidate does not exist");
+        
+        voters[msg.sender].hasVoted = true;
+        voters[msg.sender].votedCandidate = _candidateId;
+        candidates[_candidateId].voteCount++;
+        totalVotes++;
+        
+        emit VoteCast(msg.sender, _candidateId);
+    }
+    
+    // Core Function 3: Manage voting process and get results
+    function startVoting(uint256 _durationInMinutes) public onlyOwner votingNotActive {
+        require(candidateCount > 0, "No candidates registered");
+        require(_durationInMinutes > 0, "Duration must be greater than 0");
+        
+        votingEnd = block.timestamp + (_durationInMinutes * 1 minutes);
+        votingActive = true;
+        
+        emit VotingStarted(votingEnd);
+    }
+    
+    function endVoting() public onlyOwner {
+        require(votingActive, "Voting is not active");
+        
+        votingActive = false;
+        emit VotingEnded();
+    }
+    
+    function getResults() public view returns (string[] memory names, uint256[] memory voteCounts) {
+        require(!votingActive || block.timestamp >= votingEnd, "Voting is still active");
+        
+        names = new string[](candidateCount);
+        voteCounts = new uint256[](candidateCount);
+        
+        for (uint256 i = 0; i < candidateCount; i++) {
+            names[i] = candidates[i].name;
+            voteCounts[i] = candidates[i].voteCount;
+        }
+        
+        return (names, voteCounts);
+    }
+    
+    function getWinner() public view returns (string memory winnerName, uint256 winnerVotes) {
+        require(!votingActive || block.timestamp >= votingEnd, "Voting is still active");
+        require(candidateCount > 0, "No candidates");
+        
+        uint256 winnerIndex = 0;
+        uint256 maxVotes = 0;
+        
+        for (uint256 i = 0; i < candidateCount; i++) {
+            if (candidates[i].voteCount > maxVotes) {
+                maxVotes = candidates[i].voteCount;
+                winnerIndex = i;
+            }
+        }
+        
+        return (candidates[winnerIndex].name, candidates[winnerIndex].voteCount);
+    }
+    
+    // Utility functions
+    function getVotingStatus() public view returns (bool active, uint256 endTime, uint256 timeLeft) {
+        active = votingActive;
+        endTime = votingEnd;
+        
+        if (votingActive && block.timestamp < votingEnd) {
+            timeLeft = votingEnd - block.timestamp;
+        } else {
+            timeLeft = 0;
+        }
+        
+        return (active, endTime, timeLeft);
+    }
+    
+    function getCandidateCount() public view returns (uint256) {
+        return candidateCount;
+    }
+    
+    function getTotalVotes() public view returns (uint256) {
+        return totalVotes;
+    }
+}
